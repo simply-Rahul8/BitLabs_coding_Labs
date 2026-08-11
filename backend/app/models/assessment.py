@@ -29,7 +29,10 @@ class Assessment(Base):
     recruiter_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"), nullable=False, index=True)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    difficulty: Mapped[Difficulty] = mapped_column(Enum(Difficulty, name="difficulty"), nullable=False)
+    difficulty: Mapped[Difficulty] = mapped_column(
+        Enum(Difficulty, name="difficulty", values_callable=lambda enum_class: [member.value for member in enum_class]),
+        nullable=False,
+    )
     time_limit_mins: Mapped[int] = mapped_column(Integer, nullable=False)
     language_support: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
@@ -74,7 +77,13 @@ class AssessmentInvitation(Base):
     token: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime, nullable=False)
     status: Mapped[InvitationStatus] = mapped_column(
-        Enum(InvitationStatus, name="invitation_status"), default=InvitationStatus.PENDING, nullable=False
+        Enum(
+            InvitationStatus,
+            name="invitation_status",
+            values_callable=lambda enum_class: [member.value for member in enum_class],
+        ),
+        default=InvitationStatus.PENDING,
+        nullable=False,
     )
 
     assessment: Mapped[Assessment] = relationship(back_populates="invitations")

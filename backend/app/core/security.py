@@ -13,9 +13,14 @@ def hash_password(password: str) -> str:
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     return password_context.verify(plain_password, hashed_password)
 
-def create_access_token(subject: str, expires_delta: timedelta | None = None) -> str:
+def create_access_token(
+    subject: str, role: str | None = None, expires_delta: timedelta | None = None
+) -> str:
     expires_at = datetime.now(timezone.utc) + (expires_delta or timedelta(hours=ACCESS_TOKEN_EXPIRE_HOURS))
-    return jwt.encode({"sub": subject, "exp": expires_at}, settings.SECRET_KEY, algorithm=ALGORITHM)
+    payload: dict[str, object] = {"sub": subject, "exp": expires_at}
+    if role is not None:
+        payload["role"] = role
+    return jwt.encode(payload, settings.SECRET_KEY, algorithm=ALGORITHM)
 
 def decode_access_token(token: str) -> dict[str, object]:
     try:

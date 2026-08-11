@@ -29,8 +29,18 @@ class PracticeProblem(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     title: Mapped[str] = mapped_column(String(255), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False)
-    category: Mapped[PracticeCategory] = mapped_column(Enum(PracticeCategory, name="practice_category"), nullable=False)
-    difficulty: Mapped[Difficulty] = mapped_column(Enum(Difficulty, name="difficulty"), nullable=False)
+    category: Mapped[PracticeCategory] = mapped_column(
+        Enum(
+            PracticeCategory,
+            name="practice_category",
+            values_callable=lambda enum_class: [member.value for member in enum_class],
+        ),
+        nullable=False,
+    )
+    difficulty: Mapped[Difficulty] = mapped_column(
+        Enum(Difficulty, name="difficulty", values_callable=lambda enum_class: [member.value for member in enum_class]),
+        nullable=False,
+    )
     language_support: Mapped[list[str]] = mapped_column(JSON, nullable=False)
     test_cases: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
 
