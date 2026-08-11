@@ -20,12 +20,14 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    user_role = sa.Enum("recruiter", "candidate", name="user_role")
-    difficulty = sa.Enum("easy", "medium", "hard", name="difficulty")
-    invitation_status = sa.Enum("pending", "completed", "expired", name="invitation_status")
-    practice_category = sa.Enum(
+    user_role = postgresql.ENUM("recruiter", "candidate", name="user_role", create_type=False)
+    difficulty = postgresql.ENUM("easy", "medium", "hard", name="difficulty", create_type=False)
+    invitation_status = postgresql.ENUM(
+        "pending", "completed", "expired", name="invitation_status", create_type=False
+    )
+    practice_category = postgresql.ENUM(
         "arrays", "strings", "trees", "graphs", "dp", "sorting", "searching", "recursion", "hashing",
-        name="practice_category",
+        name="practice_category", create_type=False,
     )
     bind = op.get_bind()
     user_role.create(bind, checkfirst=True)
