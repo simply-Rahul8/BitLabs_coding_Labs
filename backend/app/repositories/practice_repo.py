@@ -81,3 +81,8 @@ class PracticeRepository:
         db.commit()
         db.refresh(progress)
         return progress
+
+    @staticmethod
+    def get_attempts(db: Session, candidate_id: uuid.UUID, limit: int = 20) -> list[PracticeAttempt]:
+        statement = select(PracticeAttempt).where(PracticeAttempt.candidate_id == candidate_id).order_by(PracticeAttempt.attempted_at.desc()).limit(limit)
+        return list(db.scalars(statement).all())

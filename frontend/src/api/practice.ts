@@ -78,3 +78,15 @@ export async function getProgress() {
   const response = await apiClient.get<GetProgressResponse>("/practice/progress/");
   return response.data;
 }
+
+export type PracticeAttemptRecord = {
+  id: string;
+  language: string;
+  is_correct: boolean;
+  attempted_at: string;
+};
+
+export async function getHistory() {
+  const response = await apiClient.get<PracticeAttemptRecord[]>("/practice/history/");
+  return response.data;
+}

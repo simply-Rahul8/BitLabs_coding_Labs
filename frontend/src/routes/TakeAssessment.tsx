@@ -62,7 +62,16 @@ export default function TakeAssessment() {
 
         const firstQ = invitation.questions?.[0];
         if (firstQ) {
-          setQuestionStarterCode(firstQ.starter_code || null);
+// Normalize starter code across all languages
+          const sc = firstQ.starter_code || {};
+          const allLangs = Object.keys(languageTemplates);
+          const anyCode = Object.values(sc)[0] ?? "";
+          allLangs.forEach((lang) => {
+            if (!sc[lang]) {
+              sc[lang] = anyCode;
+            }
+          });
+          setQuestionStarterCode(sc);
           setProblemStatement(firstQ.problem_statement || invitation.assessment_description || "No problem statement available.");
           setConstraints(firstQ.constraints || "No additional constraints were supplied.");
           setTestCases(firstQ.test_cases || []);
@@ -204,19 +213,7 @@ export default function TakeAssessment() {
           try {
             const checkRes = await getSubmission(subId);
             if (checkRes.score !== null && checkRes.score !== undefined && checkRes.ai_evaluation) {
-              const resultData: SubmissionResult = {
-                submission_id: checkRes.id,
-                score: checkRes.score,
-                test_results: checkRes.test_results ?? {
-                  passed: 0,
-                  failed: 0,
-                  total: 0,
-                  results: []
-                },
-                ai_evaluation: checkRes.ai_evaluation
-              };
-              setSubmissionResult(resultData);
-              setResultOpen(true);
+              setSubmitted(true);
               break;
             }
           } catch (pollErr) {
@@ -228,8 +225,7 @@ export default function TakeAssessment() {
         }
         setProcessingAsync(false);
       } else {
-        setSubmissionResult(response.data);
-        setResultOpen(true);
+        setSubmitted(true);
       }
     } catch (err: any) {
       toast.error(err?.response?.data?.detail || "Submission failed");
@@ -433,78 +429,6 @@ export default function TakeAssessment() {
           </div>
         </main>
       </div>
-
-      {resultOpen && submissionResult && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">
-          <div className="w-full max-w-2xl rounded-xl border border-slate-700 bg-slate-900 p-6 shadow-xl">
-            <div className="text-center">
-              <h3 className="text-4xl font-bold text-white">
-                {submissionResult.score !== null && submissionResult.score !== undefined ? `${submissionResult.score} / 100` : "Pending"}
-              </h3>
-            </div>
-
-            <div className="mt-6 rounded-lg border border-slate-700 bg-slate-950 p-4">
-              <div className="mb-2 text-sm font-medium text-slate-300">Test Results</div>
-              <p className="text-sm text-slate-100">passed {submissionResult.test_results?.passed ?? 0} / {submissionResult.test_results?.total ?? 0}</p>
-
-              <div className="mt-4 space-y-2">
-                {(submissionResult.test_results?.results || [])
-                  .filter((r: any) => !r.is_hidden)
-                  .map((r, idx) => (
-                    <div key={idx} className="flex items-start justify-between gap-4 rounded-md border border-slate-800 bg-slate-900 p-3">
-                    <div className="flex-1">
-                      <div className="text-xs text-slate-400">Input</div>
-                      <pre className="whitespace-pre-wrap text-sm text-slate-100">{r.input}</pre>
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-xs text-slate-400">Expected</div>
-                      <pre className="whitespace-pre-wrap text-sm text-slate-100">{r.expected}</pre>
-                    </div>
-                    <div className="flex-1">
-                      <div className="text-xs text-slate-400">Actual</div>
-                      <pre className="whitespace-pre-wrap text-sm text-slate-100">{r.actual}</pre>
-                    </div>
-                    <div className="ml-4 flex-shrink-0 text-sm font-medium">
-                      {r.passed ? (
-                        <span className="rounded-full bg-emerald-700/20 px-3 py-1 text-emerald-300">Passed</span>
-                      ) : (
-                        <span className="rounded-full bg-rose-700/20 px-3 py-1 text-rose-300">Failed</span>
-                      )}
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {/* AI evaluation handling: hide if ai_score is 0 and strengths indicates "Could not" */}
-            {submissionResult.ai_evaluation ? (
-              (submissionResult.ai_evaluation.ai_score === 0 && (submissionResult.ai_evaluation.strengths || "").includes("Could not")) ? null : (
-                <div className="mt-6 space-y-4">
-                  <div>
-                    <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Strengths</h4>
-                    <p className="mt-2 text-sm text-slate-200">{submissionResult.ai_evaluation.strengths}</p>
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Weaknesses</h4>
-                    <p className="mt-2 text-sm text-slate-200">{submissionResult.ai_evaluation.weaknesses}</p>
-                  </div>
-                  <div>
-                    <h4 className="text-sm font-semibold uppercase tracking-wide text-slate-400">Recommendations</h4>
-                    <p className="mt-2 text-sm text-slate-200">{submissionResult.ai_evaluation.recommendations}</p>
-                  </div>
-                </div>
-              )
-            ) : null}
-
-            <div className="mt-6 flex justify-center">
-              <Button type="button" onClick={() => {
-                setResultOpen(false);
-                setSubmitted(true);
-              }}>Done</Button>
-            </div>
-          </div>
-        </div>
-      )}
 
       {processingAsync && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 p-4">

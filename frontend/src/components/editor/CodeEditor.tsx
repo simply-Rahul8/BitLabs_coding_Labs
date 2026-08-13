@@ -7,9 +7,10 @@ type CodeEditorProps = {
   value: string;
   onChange: (value: string) => void;
   readOnly?: boolean;
+  heightClass?: string;
 };
 
-export default function CodeEditor({ language, value, onChange, readOnly = false }: CodeEditorProps) {
+export default function CodeEditor({ language, value, onChange, readOnly = false, heightClass = "h-[520px]" }: CodeEditorProps) {
   const previousLanguage = useRef(language);
 
   useEffect(() => {
@@ -38,7 +39,7 @@ export default function CodeEditor({ language, value, onChange, readOnly = false
   };
 
   return (
-    <div className="h-[520px] overflow-hidden rounded-lg border border-slate-800 bg-slate-950">
+    <div className={`${heightClass} overflow-hidden rounded-lg border border-slate-800 bg-slate-950`}>
       <Editor
         height="100%"
         language={language === "cpp" ? "cpp" : language}

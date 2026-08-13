@@ -1,5 +1,5 @@
 from app.services.execution_service import DockerExecutionService
-
+MAX_TEST_CASES = 10  # limit number of test cases per submission
 
 async def run_test_cases(
     source_code: str, language: str, test_cases: list[dict], timeout: int = 10
@@ -7,6 +7,8 @@ async def run_test_cases(
     service = DockerExecutionService()
     results: list[dict] = []
     passed_count = 0
+    if len(test_cases) > MAX_TEST_CASES:
+        test_cases = test_cases[:MAX_TEST_CASES]
     for test_case in test_cases:
         result = await service.execute(source_code, language, stdin=test_case["input"], timeout=timeout)
         actual = str(result["stdout"]).strip()

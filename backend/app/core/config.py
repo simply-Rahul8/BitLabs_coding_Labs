@@ -12,6 +12,7 @@ class Settings(BaseSettings):
     NVIDIA_API_KEY: str | None = None
     GEMINI_API_KEY: str | None = None
     EXECUTION_TIMEOUT: int = 10
+    MAX_CONCURRENT_EXECUTIONS: int = 10
     model_config = SettingsConfigDict(env_file=BASE_DIR / ".env", env_file_encoding="utf-8", extra="ignore")
 
 

@@ -1,3 +1,5 @@
+import asyncio
+from typing import Any
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
@@ -54,12 +56,21 @@ async def run_practice_code(
     supported_languages = {"python", "c", "cpp", "java", "javascript"}
     if payload.language not in supported_languages:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Unsupported language")
-    result = await DockerExecutionService().execute(
-        source_code=payload.source_code,
-        language=payload.language,
-        stdin=payload.stdin,
-        timeout=10,
-    )
+    try:
+        result = await asyncio.wait_for(
+            DockerExecutionService().execute(
+                source_code=payload.source_code,
+                language=payload.language,
+                stdin=payload.stdin,
+                timeout=10,
+            ),
+            timeout=15.0,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=503,
+            detail="Execution service busy. Please try again."
+        )
     return RunResponse(**result)
 
 
@@ -117,3 +128,20 @@ async def get_practice_progress(
         "total_solved": progress.total_solved,
         "last_active": progress.last_active,
     }
+
+
+@router.get("/history/")
+async def get_practice_history(
+    current_user: User = Depends(require_candidate),
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    attempts = PracticeRepository.get_attempts(db, current_user.id, limit=20)
+    return [
+        {
+            "id": str(att.id),
+            "language": att.language,
+            "is_correct": att.is_correct,
+            "attempted_at": att.attempted_at,
+        }
+        for att in attempts
+    ]

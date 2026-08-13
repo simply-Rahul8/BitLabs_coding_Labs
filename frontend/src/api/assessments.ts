@@ -101,6 +101,7 @@ export type CandidateInvitation = {
   expires_at: string;
   test_url: string;
   score: number | null;
+  submission_id?: string;
 };
 
 export async function getCandidateInvitations() {

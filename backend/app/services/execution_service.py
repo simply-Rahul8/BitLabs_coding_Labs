@@ -2,9 +2,17 @@ import asyncio
 import shutil
 import tempfile
 from pathlib import Path
-
+from app.core.config import settings
 
 class DockerExecutionService:
+    _semaphore: asyncio.Semaphore | None = None
+
+    @classmethod
+    def get_semaphore(cls) -> asyncio.Semaphore:
+        if cls._semaphore is None:
+            cls._semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_EXECUTIONS)
+        return cls._semaphore
+
     IMAGES = {
         "python": "python:3.11-slim",
         "c": "gcc:latest",
@@ -113,26 +121,26 @@ class DockerExecutionService:
             return {"stdout": "", "stderr": "", "exit_code": -1, "timed_out": False, "error": f"Unsupported language: {language}"}
 
         tmp_dir: str | None = None
-        process: asyncio.subprocess.Process | None = None
         try:
             tmp_dir = await asyncio.to_thread(tempfile.mkdtemp)
             await asyncio.to_thread(self._write_files, tmp_dir, self.FILENAMES[language], source_code, stdin)
-            process = await asyncio.create_subprocess_exec(
-                *self._docker_command(tmp_dir, language),
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
-            communication = asyncio.create_task(process.communicate())
-            stdout, stderr = await asyncio.wait_for(asyncio.shield(communication), timeout=timeout)
-            if process.returncode != 0 and "docker" in stderr.decode("utf-8", errors="replace").lower():
-                return await self._execute_locally(tmp_dir, language, stdin, timeout)
-            return {
-                "stdout": stdout.decode("utf-8", errors="replace"),
-                "stderr": stderr.decode("utf-8", errors="replace"),
-                "exit_code": process.returncode if process.returncode is not None else -1,
-                "timed_out": False,
-                "error": None,
-            }
+            async with self.get_semaphore():
+                process = await asyncio.create_subprocess_exec(
+                    *self._docker_command(tmp_dir, language),
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                communication = asyncio.create_task(process.communicate())
+                stdout, stderr = await asyncio.wait_for(asyncio.shield(communication), timeout=timeout)
+                if process.returncode != 0 and "docker" in stderr.decode("utf-8", errors="replace").lower():
+                    return await self._execute_locally(tmp_dir, language, stdin, timeout)
+                return {
+                    "stdout": stdout.decode("utf-8", errors="replace"),
+                    "stderr": stderr.decode("utf-8", errors="replace"),
+                    "exit_code": process.returncode if process.returncode is not None else -1,
+                    "timed_out": False,
+                    "error": None,
+                }
         except (FileNotFoundError, NotImplementedError, Exception):
             if tmp_dir is not None:
                 return await self._execute_locally(tmp_dir, language, stdin, timeout)

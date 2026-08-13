@@ -104,6 +104,7 @@ async def get_candidate_invitations(
             "expires_at": inv.expires_at,
             "test_url": f"/assessment/{inv.token}",
             "score": submission.score if submission else None,
+            "submission_id": str(submission.id) if submission else None,
         })
     return out
 

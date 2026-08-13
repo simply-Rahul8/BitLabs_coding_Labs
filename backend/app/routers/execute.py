@@ -6,6 +6,7 @@ from app.core.config import settings
 from app.core.dependencies import get_current_user, get_db
 from app.models import User
 from app.services.execution_service import DockerExecutionService
+import asyncio
 
 
 router = APIRouter(prefix="/execute", tags=["execute"])
@@ -99,10 +100,19 @@ async def execute_code(
         )
 
     timeout = min(int(settings.EXECUTION_TIMEOUT), 15)
-    result = await DockerExecutionService().execute(
-        source_code=payload.source_code,
-        language=payload.language,
-        stdin=payload.stdin,
-        timeout=timeout,
-    )
+    try:
+        result = await asyncio.wait_for(
+            DockerExecutionService().execute(
+                source_code=payload.source_code,
+                language=payload.language,
+                stdin=payload.stdin,
+                timeout=timeout,
+            ),
+            timeout=15.0,
+        )
+    except asyncio.TimeoutError:
+        raise HTTPException(
+            status_code=503,
+            detail="Execution service busy. Please try again."
+        )
     return RunResponse(**result)
