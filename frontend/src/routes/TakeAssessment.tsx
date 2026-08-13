@@ -31,6 +31,16 @@ export default function TakeAssessment() {
   const [processingAsync, setProcessingAsync] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [questionStarterCode, setQuestionStarterCode] = useState<Record<string, string> | null>(null);
+  const [testCases, setTestCases] = useState<Array<{
+    id: string;
+    is_hidden: boolean;
+    input?: string;
+    expected_output?: string;
+    passed?: boolean;
+    actual?: string;
+    run?: boolean;
+  }>>([]);
+  const [runTestResultSummary, setRunTestResultSummary] = useState<string>("");
 
   useEffect(() => {
     const fetchAssessment = async () => {
@@ -55,6 +65,7 @@ export default function TakeAssessment() {
           setQuestionStarterCode(firstQ.starter_code || null);
           setProblemStatement(firstQ.problem_statement || invitation.assessment_description || "No problem statement available.");
           setConstraints(firstQ.constraints || "No additional constraints were supplied.");
+          setTestCases(firstQ.test_cases || []);
           const rawExamples = firstQ.examples;
           let formattedExamples = "No examples were supplied.";
           if (rawExamples) {
@@ -122,6 +133,7 @@ export default function TakeAssessment() {
 
     try {
       setRunLoading(true);
+      setRunTestResultSummary("");
       const result = await runCode({
         source_code: code,
         language,
@@ -129,10 +141,34 @@ export default function TakeAssessment() {
         invitation_token: token,
       });
       setStdout(result.stdout || result.stderr || "No output");
-      if (result.stdout === "code execution successful") {
-        toast.success("Code execution successful.");
+      if (result.test_results) {
+        const tr = result.test_results;
+        setRunTestResultSummary(`Passed ${tr.passed} / ${tr.total}`);
+        setTestCases((prevCases) => {
+          return prevCases.map((c, idx) => {
+            const runInfo = tr.results?.[idx];
+            if (runInfo) {
+              return {
+                ...c,
+                passed: runInfo.passed,
+                actual: runInfo.actual,
+                run: true
+              };
+            }
+            return c;
+          });
+        });
+        if (tr.passed === tr.total) {
+          toast.success("Code execution successful.");
+        } else {
+          toast.error("Test cases failed.");
+        }
       } else {
-        toast.error("Test cases failed.");
+        if (result.stdout === "code execution successful") {
+          toast.success("Code execution successful.");
+        } else {
+          toast.error("Test cases failed.");
+        }
       }
     } catch (error) {
       toast.error("Execution failed.");
@@ -286,13 +322,114 @@ export default function TakeAssessment() {
             </div>
           </div>
 
-          <div className="mt-5 flex justify-end gap-3">
-            <Button type="button" variant="secondary" disabled={runLoading || isExpired} onClick={handleRunCode}>
-              {runLoading ? <Spinner label="Running" /> : "Run Code"}
-            </Button>
-            <Button type="button" disabled={submitLoading || isExpired} onClick={handleSubmit}>
-              {submitLoading ? <Spinner label="Submitting" /> : "Submit"}
-            </Button>
+          {/* Test Cases Panel */}
+          {testCases.length > 0 && (
+            <div className="mt-6 rounded-lg border border-slate-700 bg-slate-950 p-4">
+              <div className="mb-4 flex items-center justify-between border-b border-slate-800 pb-2">
+                <span className="text-sm font-semibold tracking-wider uppercase text-slate-400">Test Cases</span>
+                {runTestResultSummary && (
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded ${
+                    (() => {
+                      const parts = runTestResultSummary.replace("Passed ", "").split(" / ");
+                      return parts[0] !== parts[1];
+                    })()
+                      ? "bg-rose-950/60 text-rose-400 border border-rose-800/60"
+                      : "bg-emerald-950/60 text-emerald-400 border border-emerald-800/60"
+                  }`}>
+                    {runTestResultSummary}
+                  </span>
+                )}
+              </div>
+
+              <div className="space-y-3">
+                {testCases.map((tc, idx) => (
+                  <div key={tc.id || idx} className="rounded-md border border-slate-800 bg-slate-900/40 p-3">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        {tc.is_hidden ? (
+                          <span className="flex items-center gap-1.5 text-xs font-semibold text-slate-400">
+                            🔒 Hidden Test Case {idx + 1}
+                          </span>
+                        ) : (
+                          <span className="text-xs font-semibold text-slate-350">
+                            Visible Test Case {idx + 1}
+                          </span>
+                        )}
+                      </div>
+                      {tc.run && (
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded ${
+                          tc.passed
+                            ? "bg-emerald-950 text-emerald-400 border border-emerald-900"
+                            : "bg-rose-950 text-rose-400 border border-rose-900"
+                        }`}>
+                          {tc.passed ? "Passed" : "Failed"}
+                        </span>
+                      )}
+                    </div>
+
+                    {!tc.is_hidden && (
+                      <div className="mt-3 grid gap-3 md:grid-cols-2 text-xs font-mono">
+                        <div>
+                          <span className="text-[10px] uppercase text-slate-500 font-bold block mb-1">Input</span>
+                          <pre className="rounded bg-slate-950 p-2 border border-slate-800 overflow-x-auto text-slate-300 max-h-24">{tc.input}</pre>
+                        </div>
+                        <div>
+                          <span className="text-[10px] uppercase text-slate-500 font-bold block mb-1">Expected Output</span>
+                          <pre className="rounded bg-slate-950 p-2 border border-slate-800 overflow-x-auto text-slate-300 max-h-24">{tc.expected_output}</pre>
+                        </div>
+                        {tc.run && tc.actual && (
+                          <div className="col-span-2">
+                            <span className="text-[10px] uppercase text-slate-500 font-bold block mb-1">Actual Output</span>
+                            <pre className={`rounded p-2 border overflow-x-auto max-h-24 ${
+                              tc.passed
+                                ? "bg-slate-950 border-slate-800 text-slate-200"
+                                : "bg-rose-950/20 border-rose-900/40 text-rose-300"
+                            }`}>{tc.actual}</pre>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          <div className="mt-5 flex flex-wrap items-center justify-between gap-3">
+            <div className="text-sm font-medium">
+              {runTestResultSummary && (
+                <span className={
+                  (() => {
+                    const parts = runTestResultSummary.replace("Passed ", "").split(" / ");
+                    return parts[0] !== parts[1];
+                  })()
+                    ? "text-rose-400"
+                    : "text-emerald-400"
+                }>
+                  {(() => {
+                    const parts = runTestResultSummary.replace("Passed ", "").split(" / ");
+                    const passedCount = parseInt(parts[0], 10);
+                    const totalCount = parseInt(parts[1], 10);
+                    if (passedCount !== totalCount) {
+                      if (totalCount === 1) {
+                        return "test 1/1 failed";
+                      }
+                      return `test cases failed: ${passedCount}/${totalCount} passed`;
+                    }
+                    return "all test cases passed";
+                  })()}
+                </span>
+              )}
+            </div>
+
+            <div className="flex gap-3">
+              <Button type="button" variant="secondary" disabled={runLoading || isExpired} onClick={handleRunCode}>
+                {runLoading ? <Spinner label="Running" /> : "Run Code"}
+              </Button>
+              <Button type="button" disabled={submitLoading || isExpired} onClick={handleSubmit}>
+                {submitLoading ? <Spinner label="Submitting" /> : "Submit"}
+              </Button>
+            </div>
           </div>
         </main>
       </div>

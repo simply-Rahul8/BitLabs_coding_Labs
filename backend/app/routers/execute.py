@@ -24,6 +24,7 @@ class RunResponse(BaseModel):
     exit_code: int
     timed_out: bool
     error: str | None
+    test_results: dict | None = None
 
 
 @router.post("/run", response_model=RunResponse)
@@ -50,31 +51,52 @@ async def execute_code(
 
         question = questions[0]
         test_cases = AssessmentRepository.get_test_cases(db, question_id=question.id, hidden_only=False)
-        test_case_payload = [{"input": case.input, "expected_output": case.expected_output} for case in test_cases]
+        test_case_payload = [
+            {
+                "input": case.input,
+                "expected_output": case.expected_output,
+                "is_hidden": case.is_hidden,
+            }
+            for case in test_cases
+        ]
 
         timeout = min(int(settings.EXECUTION_TIMEOUT), 15)
         test_results = await run_test_cases(payload.source_code, payload.language, test_case_payload, timeout=timeout)
 
-        # Check if all test cases passed (total must be > 0, or we succeed by default)
         passed = test_results.get("passed", 0)
         total = test_results.get("total", 0)
 
-        if total > 0 and passed == total:
-            return RunResponse(
-                stdout="code execution successful",
-                stderr="",
-                exit_code=0,
-                timed_out=False,
-                error=None
-            )
-        else:
-            return RunResponse(
-                stdout="test cases failed",
-                stderr="",
-                exit_code=1,
-                timed_out=False,
-                error=None
-            )
+        scrubbed_results = []
+        for r in test_results.get("results", []):
+            if r.get("is_hidden", False):
+                scrubbed_results.append({
+                    "passed": r["passed"],
+                    "is_hidden": True,
+                    "input": "[Hidden]",
+                    "expected": "[Hidden]",
+                    "actual": "[Hidden]"
+                })
+            else:
+                scrubbed_results.append({
+                    "passed": r["passed"],
+                    "is_hidden": False,
+                    "input": r["input"],
+                    "expected": r["expected"],
+                    "actual": r["actual"]
+                })
+
+        return RunResponse(
+            stdout="code execution successful" if passed == total else "test cases failed",
+            stderr="",
+            exit_code=0 if passed == total else 1,
+            timed_out=False,
+            error=None,
+            test_results={
+                "passed": passed,
+                "total": total,
+                "results": scrubbed_results
+            }
+        )
 
     timeout = min(int(settings.EXECUTION_TIMEOUT), 15)
     result = await DockerExecutionService().execute(

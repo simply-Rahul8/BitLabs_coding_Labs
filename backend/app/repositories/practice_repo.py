@@ -30,10 +30,10 @@ class PracticeRepository:
     def create_attempt(
         db: Session,
         candidate_id: uuid.UUID,
-        problem_id: uuid.UUID,
         language: str,
         source_code: str,
         is_correct: bool,
+        problem_id: uuid.UUID | None = None,
     ) -> PracticeAttempt:
         attempt = PracticeAttempt(
             candidate_id=candidate_id,
@@ -66,6 +66,16 @@ class PracticeRepository:
         breakdown[category_key] = int(breakdown.get(category_key, 0)) + 1
         progress.total_solved += 1
         progress.category_breakdown = breakdown
+        progress.last_active = datetime.utcnow()
+        db.add(progress)
+        db.commit()
+        db.refresh(progress)
+        return progress
+
+    @staticmethod
+    def increment_solved(db: Session, candidate_id: uuid.UUID) -> PracticeProgress:
+        progress = PracticeRepository.get_or_create_progress(db, candidate_id)
+        progress.total_solved += 1
         progress.last_active = datetime.utcnow()
         db.add(progress)
         db.commit()

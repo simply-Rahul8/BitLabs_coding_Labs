@@ -1,16 +1,34 @@
 import json
 import re
 from typing import Any
-
-from groq import AsyncGroq
+import httpx
+from google import genai
 
 from app.core.config import settings
 
 
 class AIService:
     def __init__(self) -> None:
-        self.client = AsyncGroq(api_key=settings.GROQ_API_KEY) if settings.GROQ_API_KEY else None
-        self.model = "llama-3.1-8b-instant"
+        self.api_key = settings.GEMINI_API_KEY
+        self.model = "gemini-3.6-flash"
+        self.client = genai.Client(api_key=self.api_key) if self.api_key else genai.Client()
+
+    async def _call_api(self, messages, max_tokens=4096) -> str:
+        prompt = messages[-1]["content"] if messages else ""
+        try:
+            interaction = await self.client.aio.interactions.create(
+                model=self.model,
+                input=prompt,
+                generation_config={
+                    "max_output_tokens": max_tokens,
+                    "temperature": 1.0,
+                    "top_p": 0.95
+                }
+            )
+            return interaction.output_text or ""
+        except Exception as e:
+            print(f"Gemini API Error: {e}")
+            return ""
 
     def _redact_secrets(self, text: str) -> str:
         # Redact potential API keys (Groq, OpenAI, etc.)
@@ -37,50 +55,14 @@ class AIService:
             "Constraints should describe the input shape, performance expectations, and any important edge conditions."
         )
 
-        if self.client is None:
-            return {"error": "GROQ_API_KEY is not configured"}
-
+        text = await self._call_api([{"role": "user", "content": prompt}], max_tokens=2000)
+        
+        if not text:
+            return {"error": "No text content returned from AI response"}
+            
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                max_tokens=1000,
-            )
-            text = ""
-            if getattr(response, "choices", None):
-                choice = response.choices[0]
-                message = getattr(choice, "message", None)
-                content = getattr(message, "content", "")
-                if isinstance(content, str):
-                    text = content
-                elif isinstance(content, list):
-                    for item in content:
-                        if isinstance(item, str):
-                            text += item
-                        elif isinstance(item, dict):
-                            text += str(item.get("text", ""))
-            elif getattr(response, "output_text", None):
-                text = response.output_text
-            elif getattr(response, "output", None):
-                for item in response.output:
-                    if isinstance(item, str):
-                        text += item
-                    elif getattr(item, "output_text", None):
-                        text += item.output_text
-                    elif hasattr(item, "content") and item.content:
-                        if isinstance(item.content, list):
-                            for content_item in item.content:
-                                if getattr(content_item, "text", None):
-                                    text += content_item.text
-                        elif isinstance(item.content, str):
-                            text += item.content
-            if not text:
-                raise ValueError("No text content returned from AI response")
+            # Clean up markdown formatting if the model still returns it despite instructions
+            text = text.replace("```json", "").replace("```", "").strip()
             parsed = json.loads(text)
             return parsed
         except Exception as exc:
@@ -118,50 +100,13 @@ class AIService:
             "recommendations": "Code logic is sound. Focus on optimizing time/space complexity." if passed == total else "Verify input boundary conditions and check for edge case edge scenarios.",
         }
 
-        if self.client is None:
+        text = await self._call_api([{"role": "user", "content": prompt}], max_tokens=1500)
+        
+        if not text:
             return heuristic_eval
-
+            
         try:
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=[
-                    {
-                        "role": "user",
-                        "content": prompt,
-                    }
-                ],
-                max_tokens=800,
-            )
-            text = ""
-            if getattr(response, "choices", None):
-                choice = response.choices[0]
-                message = getattr(choice, "message", None)
-                content = getattr(message, "content", "")
-                if isinstance(content, str):
-                    text = content
-                elif isinstance(content, list):
-                    for item in content:
-                        if isinstance(item, str):
-                            text += item
-                        elif isinstance(item, dict):
-                            text += str(item.get("text", ""))
-            elif getattr(response, "output_text", None):
-                text = response.output_text
-            elif getattr(response, "output", None):
-                for item in response.output:
-                    if isinstance(item, str):
-                        text += item
-                    elif getattr(item, "output_text", None):
-                        text += item.output_text
-                    elif hasattr(item, "content") and item.content:
-                        if isinstance(item.content, list):
-                            for content_item in item.content:
-                                if getattr(content_item, "text", None):
-                                    text += content_item.text
-                        elif isinstance(item.content, str):
-                            text += item.content
-            if not text:
-                raise ValueError("No text content returned from AI response")
+            text = text.replace("```json", "").replace("```", "").strip()
             parsed = json.loads(text)
             ai_score = float(parsed.get("ai_score", 0.0))
             strengths = str(parsed.get("strengths", heuristic_eval["strengths"]))
@@ -176,3 +121,71 @@ class AIService:
             }
         except Exception:
             return heuristic_eval
+
+    async def generate_mentor_hint(self, language: str, source_code: str, user_question: str | None = None) -> dict[str, str]:
+        fallback = { "hint": "AI unavailable. Check your code manually." }
+
+        prompt = (
+            "System Instruction: You are a coding mentor. Be concise. Max 150 words.\n\n"
+            f"Language: {language}\n"
+            "Code:\n"
+            f"{source_code}\n\n"
+            f"Student asks: {user_question or 'Review my code and give one improvement tip.'}\n\n"
+            "Give:\n"
+            "1. What the code does (1 sentence)\n"
+            "2. One specific improvement or bug fix\n"
+            "3. Corrected code snippet if needed"
+        )
+
+        text = await self._call_api([
+            {"role": "user", "content": prompt}
+        ], max_tokens=800)
+        
+        if not text:
+            return fallback
+            
+        return { "hint": text }
+
+    async def evaluate_practice_code(
+        self, language: str, source_code: str, stdout: str, problem_description: str | None = None
+    ) -> dict[str, Any]:
+        fallback = {
+            "is_correct": False,
+            "score": 0,
+            "feedback": "Could not evaluate.",
+            "improvements": []
+        }
+
+        prompt = (
+            "System Instruction: You are a code evaluator. Return ONLY valid JSON.\n\n"
+            f"Language: {language}\n"
+            f"Code: {source_code}\n"
+            f"Output produced: {stdout}\n"
+            f"Problem (if any): {problem_description or 'General code review'}\n\n"
+            "Return JSON:\n"
+            "{\n"
+            '  "is_correct": true/false,\n'
+            '  "score": <0-100>,\n'
+            '  "feedback": "one paragraph",\n'
+            '  "improvements": ["tip1", "tip2"]\n'
+            "}"
+        )
+
+        text = await self._call_api([
+            {"role": "user", "content": prompt}
+        ], max_tokens=1000)
+        
+        if not text:
+            return fallback
+            
+        try:
+            text = text.replace("```json", "").replace("```", "").strip()
+            parsed = json.loads(text)
+            return {
+                "is_correct": bool(parsed.get("is_correct", False)),
+                "score": int(parsed.get("score", 0)),
+                "feedback": str(parsed.get("feedback", "Could not evaluate.")),
+                "improvements": list(parsed.get("improvements", []))
+            }
+        except Exception:
+            return fallback

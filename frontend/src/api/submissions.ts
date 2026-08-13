@@ -19,6 +19,17 @@ export type RunCodeResponse = {
   exit_code: number;
   timed_out: boolean;
   error?: string | null;
+  test_results?: {
+    passed: number;
+    total: number;
+    results: Array<{
+      passed: boolean;
+      is_hidden: boolean;
+      input: string;
+      expected: string;
+      actual: string;
+    }>;
+  } | null;
 };
 
 export type SubmissionResult = {

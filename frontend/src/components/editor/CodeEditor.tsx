@@ -17,8 +17,11 @@ export default function CodeEditor({ language, value, onChange, readOnly = false
       return;
     }
 
+    const prevTemplate = languageTemplates[previousLanguage.current];
     const nextTemplate = languageTemplates[language];
-    if (value !== nextTemplate) {
+    if (value === prevTemplate) {
+      onChange(nextTemplate);
+    } else if (value !== nextTemplate) {
       const shouldReplace = window.confirm(
         `Replace the current code with the ${language} starter template?`
       );

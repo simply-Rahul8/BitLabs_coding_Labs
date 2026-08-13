@@ -9,7 +9,7 @@ from sqlalchemy.orm import Session
 
 from app.core.dependencies import get_db, require_recruiter, require_candidate
 from app.core.security import hash_password
-from app.models import AssessmentInvitation, User, UserRole
+from app.models import AssessmentInvitation, User, UserRole, InvitationStatus
 from app.repositories import AssessmentRepository, InvitationRepository, UserRepository
 from app.schemas.assessment import AssessmentCreate, AssessmentOut, QuestionCreate, TestCaseCreate
 from app.services.ai_service import AIService
@@ -135,16 +135,32 @@ async def get_invitation_by_token(token: str, db: Session = Depends(get_db)) -> 
     assessment = invitation.assessment
     candidate_email = invitation.candidate.email if invitation.candidate else None
     questions = AssessmentRepository.get_questions(db, assessment.id)
-    questions_data = [
-        {
+    questions_data = []
+    for q in questions:
+        test_cases = AssessmentRepository.get_test_cases(db, q.id)
+        test_cases_data = []
+        for tc in test_cases:
+            if tc.is_hidden:
+                test_cases_data.append({
+                    "id": str(tc.id),
+                    "is_hidden": True,
+                })
+            else:
+                test_cases_data.append({
+                    "id": str(tc.id),
+                    "is_hidden": False,
+                    "input": tc.input,
+                    "expected_output": tc.expected_output,
+                })
+
+        questions_data.append({
             "id": str(q.id),
             "problem_statement": q.problem_statement,
             "constraints": q.constraints,
             "examples": q.examples,
             "starter_code": q.starter_code,
-        }
-        for q in questions
-    ]
+            "test_cases": test_cases_data,
+        })
     return {
         "token": invitation.token,
         "assessment_id": str(assessment.id),
@@ -226,15 +242,27 @@ async def invite_candidate(
 ) -> dict[str, Any]:
     assessment = await get_assessment_or_404(db, assessment_id, recruiter.id)
     candidate = UserRepository.get_by_email(db, payload.candidate_email)
-    if candidate is None:
+    if candidate:
+        if candidate.role != UserRole.CANDIDATE:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User exists but is not a candidate")
+        
+        statement = select(AssessmentInvitation).where(
+            AssessmentInvitation.candidate_id == candidate.id,
+            AssessmentInvitation.assessment_id == assessment.id
+        )
+        existing = db.scalar(statement)
+        if existing:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="This candidate has already been invited to this assessment."
+            )
+    else:
         candidate = UserRepository.create(
             db,
             email=payload.candidate_email,
             hashed_password=hash_password("candidate123"),
             role=UserRole.CANDIDATE,
         )
-    elif candidate.role != UserRole.CANDIDATE:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User exists but is not a candidate")
     token = uuid.uuid4().hex
     expires_at = datetime.utcnow() + timedelta(hours=payload.expires_hours)
     invitation = InvitationRepository.create(db, assessment.id, candidate.id, token, expires_at)

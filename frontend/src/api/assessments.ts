@@ -7,6 +7,13 @@ export type AssessmentTestCase = {
   is_edge_case: boolean;
 };
 
+export type InvitationTestCase = {
+  id: string;
+  is_hidden: boolean;
+  input?: string;
+  expected_output?: string;
+};
+
 export type AssessmentQuestionPayload = {
   problem_statement: string;
   constraints: string;
@@ -120,6 +127,7 @@ export async function getInvitation(token: string) {
       problem_statement: string;
       constraints: string;
       examples: Record<string, string> | string;
+      test_cases?: InvitationTestCase[];
       starter_code?: Record<string, string> | null;
     }>;
   }>(`/assessments/invite/${token}`);

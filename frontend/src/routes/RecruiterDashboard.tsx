@@ -68,8 +68,8 @@ export default function RecruiterDashboard() {
       const fullUrl = `http://localhost:5173/assessment/${response.token}`;
       setInviteLink(fullUrl);
       toast.success("Invitation created successfully.");
-    } catch (error) {
-      toast.error("Failed to send invitation.");
+    } catch (error: any) {
+      toast.error(error?.response?.data?.detail || "Failed to send invitation.");
     } finally {
       setInviteSubmitting(false);
     }

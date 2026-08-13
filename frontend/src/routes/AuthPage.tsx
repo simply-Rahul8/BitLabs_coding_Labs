@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
-import { login, register, saveToken } from "../api/auth";
+import { login, register, saveToken, getCurrentUser } from "../api/auth";
 import Button from "../components/ui/Button";
 import Spinner from "../components/ui/Spinner";
 
@@ -44,9 +44,11 @@ export default function AuthPage() {
 
       const tokenResponse = await login(email.trim(), password);
       saveToken(tokenResponse.access_token);
+      
+      const profile = await getCurrentUser();
       toast.success("Signed in successfully.");
 
-      if (mode === "register" && role === "candidate") {
+      if (profile.role.toLowerCase() === "candidate") {
         navigate("/candidate/dashboard");
       } else {
         navigate("/recruiter/dashboard");
