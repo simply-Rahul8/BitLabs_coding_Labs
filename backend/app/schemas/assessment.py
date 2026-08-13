@@ -27,6 +27,7 @@ class QuestionCreate(BaseModel):
     problem_statement: str
     constraints: str
     examples: dict
+    starter_code: dict[str, str] | None = None
 
     model_config = ConfigDict(from_attributes=True)
 
@@ -38,6 +39,7 @@ class QuestionOut(BaseModel):
     constraints: str
     examples: dict
     test_cases: list[TestCaseOut]
+    starter_code: dict[str, str] | None = None
 
     model_config = ConfigDict(from_attributes=True)
 

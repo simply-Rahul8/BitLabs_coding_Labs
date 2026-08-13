@@ -40,6 +40,7 @@ class AssessmentRepository:
             problem_statement=data.problem_statement,
             constraints=data.constraints,
             examples=data.examples,
+            starter_code=data.starter_code,
         )
         db.add(question)
         db.commit()

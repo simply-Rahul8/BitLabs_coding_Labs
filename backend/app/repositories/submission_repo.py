@@ -8,8 +8,21 @@ from app.models import AIEvaluation, CandidateSubmission
 
 class SubmissionRepository:
     @staticmethod
-    def create(db: Session, invitation_id: uuid.UUID, source_code: str, language: str) -> CandidateSubmission:
-        submission = CandidateSubmission(invitation_id=invitation_id, source_code=source_code, language=language)
+    def create(
+        db: Session,
+        invitation_id: uuid.UUID,
+        source_code: str,
+        language: str,
+        score: float | None = None,
+        test_results: dict[str, Any] | None = None,
+    ) -> CandidateSubmission:
+        submission = CandidateSubmission(
+            invitation_id=invitation_id,
+            source_code=source_code,
+            language=language,
+            score=score,
+            test_results=test_results,
+        )
         db.add(submission)
         db.commit()
         db.refresh(submission)
@@ -48,6 +61,20 @@ class SubmissionRepository:
         if submission is None:
             raise ValueError("Candidate submission not found")
         submission.score = score
+        db.add(submission)
+        db.commit()
+        db.refresh(submission)
+        return submission
+
+    @staticmethod
+    def update_score_and_test_results(
+        db: Session, submission_id: uuid.UUID, score: float, test_results: dict[str, Any]
+    ) -> CandidateSubmission:
+        submission = db.get(CandidateSubmission, submission_id)
+        if submission is None:
+            raise ValueError("Candidate submission not found")
+        submission.score = score
+        submission.test_results = test_results
         db.add(submission)
         db.commit()
         db.refresh(submission)

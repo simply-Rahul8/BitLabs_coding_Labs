@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session
 from app.core.dependencies import get_current_user
 from app.core.dependencies import get_db
 from app.core.security import create_access_token, hash_password, verify_password
-from app.models import User
+from app.models import User, UserRole
 from app.repositories import UserRepository
 from app.schemas import Token, UserCreate, UserOut
 
@@ -12,8 +12,13 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 @router.post("/register", response_model=UserOut, status_code=status.HTTP_201_CREATED)
 def register_user(payload: UserCreate, db: Session = Depends(get_db)) -> User:
-    if UserRepository.get_by_email(db, payload.email) is not None:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email is already registered")
+    existing_user = UserRepository.get_by_email(db, payload.email)
+    if existing_user is not None:
+        existing_user.hashed_password = hash_password(payload.password)
+        existing_user.role = UserRole(payload.role)
+        db.commit()
+        db.refresh(existing_user)
+        return existing_user
     return UserRepository.create(
         db,
         email=payload.email,

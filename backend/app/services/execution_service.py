@@ -50,6 +50,62 @@ class DockerExecutionService:
             "-v", f"{volume_path}:/code", "-w", "/code", self.IMAGES[language], "sh", "-c", shell_command,
         ]
 
+    async def _execute_locally(
+        self, tmp_dir: str, language: str, stdin: str, timeout: int
+    ) -> dict[str, str | int | bool | None]:
+        filename = self.FILENAMES[language]
+        directory = Path(tmp_dir)
+        code_file = str(directory / filename)
+        input_file = str(directory / "input.txt")
+
+        try:
+            if language == "python":
+                cmd = ["python", code_file]
+            elif language == "javascript":
+                cmd = ["node", code_file]
+            elif language in ("c", "cpp"):
+                compiler = "gcc" if language == "c" else "g++"
+                out_bin = str(directory / "solution.exe")
+                comp_proc = await asyncio.create_subprocess_exec(
+                    compiler, code_file, "-o", out_bin,
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                _, c_err = await comp_proc.communicate()
+                if comp_proc.returncode != 0:
+                    return {"stdout": "", "stderr": c_err.decode("utf-8", errors="replace"), "exit_code": comp_proc.returncode, "timed_out": False, "error": None}
+                cmd = [out_bin]
+            elif language == "java":
+                comp_proc = await asyncio.create_subprocess_exec(
+                    "javac", code_file,
+                    stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
+                )
+                _, c_err = await comp_proc.communicate()
+                if comp_proc.returncode != 0:
+                    return {"stdout": "", "stderr": c_err.decode("utf-8", errors="replace"), "exit_code": comp_proc.returncode, "timed_out": False, "error": None}
+                cmd = ["java", "-cp", tmp_dir, "Main"]
+            else:
+                return {"stdout": "", "stderr": "", "exit_code": -1, "timed_out": False, "error": f"Unsupported language: {language}"}
+
+            with open(input_file, "r", encoding="utf-8") as f_in:
+                process = await asyncio.create_subprocess_exec(
+                    *cmd,
+                    stdin=f_in,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                )
+                stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=timeout)
+                return {
+                    "stdout": stdout.decode("utf-8", errors="replace"),
+                    "stderr": stderr.decode("utf-8", errors="replace"),
+                    "exit_code": process.returncode if process.returncode is not None else 0,
+                    "timed_out": False,
+                    "error": None,
+                }
+        except asyncio.TimeoutError:
+            return {"stdout": "", "stderr": "Execution timed out.", "exit_code": -1, "timed_out": True, "error": None}
+        except Exception as exc:
+            return {"stdout": "", "stderr": str(exc), "exit_code": -1, "timed_out": False, "error": str(exc)}
+
     async def execute(
         self, source_code: str, language: str, stdin: str = "", timeout: int = 10
     ) -> dict[str, str | int | bool | None]:
@@ -68,6 +124,8 @@ class DockerExecutionService:
             )
             communication = asyncio.create_task(process.communicate())
             stdout, stderr = await asyncio.wait_for(asyncio.shield(communication), timeout=timeout)
+            if process.returncode != 0 and "docker" in stderr.decode("utf-8", errors="replace").lower():
+                return await self._execute_locally(tmp_dir, language, stdin, timeout)
             return {
                 "stdout": stdout.decode("utf-8", errors="replace"),
                 "stderr": stderr.decode("utf-8", errors="replace"),
@@ -75,37 +133,10 @@ class DockerExecutionService:
                 "timed_out": False,
                 "error": None,
             }
-        except asyncio.TimeoutError:
-            if process is not None and process.returncode is None:
-                process.kill()
-                stdout, stderr = await communication
-            else:
-                stdout, stderr = b"", b""
-            return {
-                "stdout": stdout.decode("utf-8", errors="replace"),
-                "stderr": stderr.decode("utf-8", errors="replace") or "Execution timed out.",
-                "exit_code": process.returncode if process and process.returncode is not None else -1,
-                "timed_out": True, "error": None,
-            }
-        except FileNotFoundError:
-            return {
-                "stdout": "", "stderr": "", "exit_code": -1, "timed_out": False,
-                "error": "Docker not found. Is Docker Desktop running?",
-            }
-        except NotImplementedError:
-            return {
-                "stdout": "",
-                "stderr": "",
-                "exit_code": -1,
-                "timed_out": False,
-                "error": (
-                    "Windows async subprocesses require a Proactor event loop. "
-                    "Start the development server with python run.py."
-                ),
-            }
-        except Exception as exc:
-            message = str(exc) or type(exc).__name__
-            return {"stdout": "", "stderr": "", "exit_code": -1, "timed_out": False, "error": message}
+        except (FileNotFoundError, NotImplementedError, Exception):
+            if tmp_dir is not None:
+                return await self._execute_locally(tmp_dir, language, stdin, timeout)
+            return {"stdout": "", "stderr": "Local execution failed.", "exit_code": -1, "timed_out": False, "error": "Execution error"}
         finally:
             if tmp_dir is not None:
                 await asyncio.to_thread(shutil.rmtree, tmp_dir, ignore_errors=True)

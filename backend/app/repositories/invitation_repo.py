@@ -39,3 +39,6 @@ class InvitationRepository:
         db.commit()
         db.refresh(invitation)
         return invitation
+    @staticmethod
+    def get_by_candidate(db: Session, candidate_id: uuid.UUID) -> list[AssessmentInvitation]:
+        return list(db.scalars(select(AssessmentInvitation).where(AssessmentInvitation.candidate_id == candidate_id)).all())

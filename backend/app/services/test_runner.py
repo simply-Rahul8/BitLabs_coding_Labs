@@ -22,6 +22,7 @@ async def run_test_cases(
                 "passed": passed,
                 "stderr": result["stderr"],
                 "timed_out": result["timed_out"],
+                "is_hidden": test_case.get("is_hidden", False),
             }
         )
     total = len(results)

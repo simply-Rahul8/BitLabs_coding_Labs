@@ -5,7 +5,9 @@ const apiClient = axios.create({
 });
 
 apiClient.interceptors.request.use((config) => {
-  const token = window.localStorage.getItem("bitlabs_token");
+  const token =
+    window.localStorage.getItem("access_token") ?? window.localStorage.getItem("bitlabs_token");
+
   if (token) {
     config.headers.Authorization = `Bearer ${token}`;
   }

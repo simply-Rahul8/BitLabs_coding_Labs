@@ -20,6 +20,7 @@ class CandidateSubmission(Base):
     language: Mapped[str] = mapped_column(String(50), nullable=False)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     submitted_at: Mapped[datetime] = mapped_column(DateTime, default=datetime.utcnow, nullable=False)
+    test_results: Mapped[dict[str, Any] | None] = mapped_column(JSON, nullable=True)
 
     invitation: Mapped["AssessmentInvitation"] = relationship(back_populates="submissions")
     ai_evaluation: Mapped["AIEvaluation | None"] = relationship(back_populates="submission", uselist=False)

@@ -7,7 +7,8 @@ from pydantic import BaseModel, ConfigDict
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.core.dependencies import get_db, require_recruiter
+from app.core.dependencies import get_db, require_recruiter, require_candidate
+from app.core.security import hash_password
 from app.models import AssessmentInvitation, User, UserRole
 from app.repositories import AssessmentRepository, InvitationRepository, UserRepository
 from app.schemas.assessment import AssessmentCreate, AssessmentOut, QuestionCreate, TestCaseCreate
@@ -81,6 +82,51 @@ async def list_assessments(
     return AssessmentRepository.get_by_recruiter(db, recruiter.id)
 
 
+@router.get("/candidate/invitations")
+async def get_candidate_invitations(
+    candidate: User = Depends(require_candidate),
+    db: Session = Depends(get_db),
+) -> list[dict[str, Any]]:
+    invitations = InvitationRepository.get_by_candidate(db, candidate.id)
+    out = []
+    for inv in invitations:
+        assessment = inv.assessment
+        submission = inv.submissions[0] if inv.submissions else None
+        out.append({
+            "invitation_id": str(inv.id),
+            "assessment_id": str(assessment.id),
+            "title": assessment.title,
+            "description": assessment.description,
+            "difficulty": assessment.difficulty,
+            "time_limit_mins": assessment.time_limit_mins,
+            "status": inv.status.value,
+            "token": inv.token,
+            "expires_at": inv.expires_at,
+            "test_url": f"/assessment/{inv.token}",
+            "score": submission.score if submission else None,
+        })
+    return out
+
+
+@router.post("/invitations/{invitation_id}/approve")
+async def approve_invitation(
+    invitation_id: uuid.UUID,
+    candidate: User = Depends(require_candidate),
+    db: Session = Depends(get_db),
+) -> dict[str, Any]:
+    invitations = InvitationRepository.get_by_candidate(db, candidate.id)
+    inv = next((i for i in invitations if i.id == invitation_id), None)
+    if not inv:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invitation not found")
+    if inv.status.value == "pending":
+        inv = InvitationRepository.update_status(db, inv.id, "active")
+    return {
+        "status": inv.status.value,
+        "token": inv.token,
+        "test_url": f"/assessment/{inv.token}",
+    }
+
+
 @router.get("/invite/{token}")
 async def get_invitation_by_token(token: str, db: Session = Depends(get_db)) -> dict[str, Any]:
     invitation = InvitationRepository.get_by_token(db, token)
@@ -88,15 +134,29 @@ async def get_invitation_by_token(token: str, db: Session = Depends(get_db)) -> 
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Invitation not found")
     assessment = invitation.assessment
     candidate_email = invitation.candidate.email if invitation.candidate else None
+    questions = AssessmentRepository.get_questions(db, assessment.id)
+    questions_data = [
+        {
+            "id": str(q.id),
+            "problem_statement": q.problem_statement,
+            "constraints": q.constraints,
+            "examples": q.examples,
+            "starter_code": q.starter_code,
+        }
+        for q in questions
+    ]
     return {
         "token": invitation.token,
-        "assessment_id": assessment.id,
+        "assessment_id": str(assessment.id),
         "assessment_title": assessment.title,
         "assessment_description": assessment.description,
+        "difficulty": assessment.difficulty,
+        "time_limit_mins": assessment.time_limit_mins,
+        "questions": questions_data,
         "expires_at": invitation.expires_at,
         "status": invitation.status.value,
         "candidate_email": candidate_email,
-        "recruiter_id": assessment.recruiter_id,
+        "recruiter_id": str(assessment.recruiter_id),
         "has_submission": len(invitation.submissions) > 0,
     }
 
@@ -110,6 +170,22 @@ async def get_assessment(
     assessment = await get_assessment_or_404(db, assessment_id, recruiter.id)
     assessment.questions = AssessmentRepository.get_questions(db, assessment.id)
     return assessment
+
+
+class GenerateAITestsNewRequest(BaseModel):
+    problem_statement: str
+    language: str
+    difficulty: str
+
+    model_config = ConfigDict(from_attributes=True)
+
+
+@router.post("/generate-ai-tests")
+async def generate_ai_tests_new(
+    payload: GenerateAITestsNewRequest,
+    recruiter: User = Depends(require_recruiter),
+) -> dict[str, Any]:
+    return await ai_service.generate_test_cases(payload.problem_statement, payload.language, payload.difficulty)
 
 
 @router.post("/{assessment_id}/ai-tests")
@@ -150,8 +226,15 @@ async def invite_candidate(
 ) -> dict[str, Any]:
     assessment = await get_assessment_or_404(db, assessment_id, recruiter.id)
     candidate = UserRepository.get_by_email(db, payload.candidate_email)
-    if candidate is None or candidate.role != UserRole.CANDIDATE:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Candidate not found")
+    if candidate is None:
+        candidate = UserRepository.create(
+            db,
+            email=payload.candidate_email,
+            hashed_password=hash_password("candidate123"),
+            role=UserRole.CANDIDATE,
+        )
+    elif candidate.role != UserRole.CANDIDATE:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="User exists but is not a candidate")
     token = uuid.uuid4().hex
     expires_at = datetime.utcnow() + timedelta(hours=payload.expires_hours)
     invitation = InvitationRepository.create(db, assessment.id, candidate.id, token, expires_at)

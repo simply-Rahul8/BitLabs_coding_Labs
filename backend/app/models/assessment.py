@@ -18,6 +18,7 @@ class Difficulty(str, enum.Enum):
 
 class InvitationStatus(str, enum.Enum):
     PENDING = "pending"
+    ACTIVE = "active"
     COMPLETED = "completed"
     EXPIRED = "expired"
 
@@ -50,6 +51,7 @@ class Question(Base):
     problem_statement: Mapped[str] = mapped_column(Text, nullable=False)
     constraints: Mapped[str] = mapped_column(Text, nullable=False)
     examples: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False)
+    starter_code: Mapped[dict[str, str] | None] = mapped_column(JSON, nullable=True)
 
     assessment: Mapped[Assessment] = relationship(back_populates="questions")
     test_cases: Mapped[list["TestCase"]] = relationship(back_populates="question", cascade="all, delete-orphan")
