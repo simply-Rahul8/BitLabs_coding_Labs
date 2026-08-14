@@ -1,4 +1,3 @@
-
 services:
 
   postgres:
@@ -21,37 +20,29 @@ services:
 
   backend:
     image: rahul720/bitlabs-coding-lab-backend:latest
-    build:
-      context: ./backend
-      dockerfile: Dockerfile
     container_name: bitlabs_backend
     restart: unless-stopped
     environment:
       DATABASE_URL: postgresql://bitlabs:bitlabs123@postgres:5432/bitlabs_coding_lab
       SECRET_KEY: ${SECRET_KEY}
       GEMINI_API_KEY: ${GEMINI_API_KEY}
-      OPENAI_API_KEY: ${OPENAI_API_KEY}
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-not-configured}
       EXECUTION_TIMEOUT: 10
       MAX_CONCURRENT_EXECUTIONS: 10
       ALLOWED_ORIGINS: http://localhost
     volumes:
-      # Mount Docker socket so backend can spin up execution containers
-      # Used double slash for Windows compatibility
-      - //var/run/docker.sock:/var/run/docker.sock
+      - /var/run/docker.sock:/var/run/docker.sock
     ports:
       - "8000:8000"
     depends_on:
       postgres:
         condition: service_healthy
     command: >
-      sh -c "alembic upgrade head && 
+      sh -c "alembic upgrade head &&
              python -m uvicorn app.main:app --host 0.0.0.0 --port 8000"
 
   frontend:
     image: rahul720/bitlabs-coding-lab-frontend:latest
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
     container_name: bitlabs_frontend
     restart: unless-stopped
     ports:
