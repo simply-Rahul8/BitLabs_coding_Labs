@@ -1,0 +1,27 @@
+# BitLabs Coding Lab - Technologies & Requirements
+
+## Frontend Technologies
+- React 18
+- Vite
+- Tailwind CSS
+- Monaco Editor
+- Playwright
+- Axios
+- React Router DOM
+- React Hot Toast
+
+## Backend Technologies
+- FastAPI (Python)
+- Uvicorn
+- PostgreSQL
+- SQLAlchemy
+- Alembic
+- Pydantic Settings
+- Python-JOSE (JWT Authentication)
+- Passlib (Password Hashing)
+- OpenAI SDK
+- Google GenAI SDK
+
+## Infrastructure & Execution
+- Docker & Docker Compose
+- Nginx
